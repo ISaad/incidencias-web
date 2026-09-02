@@ -86,3 +86,14 @@ td.ref { font-weight: 600; color: var(--azul); }
 .btn.ghost { background: transparent; border: 1px solid rgba(255,255,255,.6); }
 .btn.ghost:hover { background: rgba(255,255,255,.15); }
 .toolbar label.date { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+
+/* movil: menos columnas + mas compacto */
+@media (max-width: 640px) {
+  .hide-mobile { display: none; }
+  body { font-size: 13px; }
+  th, td { padding: 8px 8px; }
+  .desc { max-width: none; }
+  .wrap { padding: 12px 10px; }
+  header.top { padding: 12px 14px; }
+  .toolbar input[type="search"] { min-width: 140px; flex: 1; }
+}

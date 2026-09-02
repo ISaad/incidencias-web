@@ -45,6 +45,9 @@ function parseDate(d: string | null): number {
   return isNaN(t) ? 0 : t;
 }
 
+// Columnas visibles en movil (el resto se oculta en pantallas estrechas)
+const MOBILE = new Set(["referencia", "state", "room", "diasDesdeEnvio", "description"]);
+
 const DASH = <span className="muted">—</span>;
 function renderCell(r: Row, k: string): ReactNode {
   const v = r[k];
@@ -235,7 +238,7 @@ export default function Page() {
             <thead>
               <tr>
                 {COLS.map(([k, label]) => (
-                  <th key={k} onClick={() => toggleSort(k)}>
+                  <th key={k} onClick={() => toggleSort(k)} className={MOBILE.has(k) ? undefined : "hide-mobile"}>
                     {label}{sortKey === k ? (sortDir === 1 ? " ▲" : " ▼") : ""}
                   </th>
                 ))}
@@ -247,7 +250,10 @@ export default function Page() {
                   {COLS.map(([k]) => (
                     <td
                       key={k}
-                      className={k === "referencia" ? "ref" : k === "description" ? "desc" : undefined}
+                      className={[
+                        k === "referencia" ? "ref" : k === "description" ? "desc" : "",
+                        MOBILE.has(k) ? "" : "hide-mobile",
+                      ].filter(Boolean).join(" ") || undefined}
                     >
                       {renderCell(r, k)}
                     </td>
