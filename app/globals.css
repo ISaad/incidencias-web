@@ -24,9 +24,9 @@ header.top {
   gap: 12px;
 }
 header.top h1 { font-size: 18px; margin: 0; font-weight: 600; }
-header.top .counter { margin-left: auto; display: flex; align-items: baseline; gap: 8px; }
-.counter-num { font-size: 26px; font-weight: 800; line-height: 1; }
-.counter-lbl { font-size: 13px; opacity: .9; }
+header.top .counter { margin-left: auto; font-size: 13px; opacity: .9; }
+header.top .counter b { font-size: 15px; font-weight: 700; }
+.filt-note { font-size: 13px; color: var(--muted); white-space: nowrap; }
 .wrap { padding: 16px 20px; }
 .toolbar {
   display: flex;

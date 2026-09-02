@@ -199,17 +199,7 @@ export default function Page() {
           </select>
         )}
         <div className="counter">
-          {loading ? (
-            <span className="counter-lbl">cargando…</span>
-          ) : (
-            <>
-              <span className="counter-num">{rows.length}</span>
-              <span className="counter-lbl">
-                incidencias
-                {filtered.length !== rows.length && ` · ${filtered.length} filtradas`}
-              </span>
-            </>
-          )}
+          {loading ? "cargando…" : <><b>{rows.length}</b> incidencias</>}
         </div>
         <button className="btn ghost" onClick={logout}>Salir</button>
       </header>
@@ -228,6 +218,9 @@ export default function Page() {
           <label className="date">Desde <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
           <label className="date">Hasta <input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
           <button className="btn sec" onClick={() => { setQ(""); setState(""); setRoom(""); setFrom(""); setTo(""); }}>Limpiar</button>
+          {!loading && filtered.length !== rows.length && (
+            <span className="filt-note">{filtered.length} de {rows.length}</span>
+          )}
           <div className="spacer" />
           <button className="btn sec" onClick={load} title="Refrescar">↻ Refrescar</button>
           <button className="btn" onClick={exportXlsx} disabled={!filtered.length}>Excel</button>
