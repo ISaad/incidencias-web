@@ -181,7 +181,19 @@ export default function Page() {
             ))}
           </select>
         )}
-        <span className="count">{loading ? "cargando…" : `${filtered.length} / ${rows.length}`}</span>
+        <div className="counter">
+          {loading ? (
+            <span className="counter-lbl">cargando…</span>
+          ) : (
+            <>
+              <span className="counter-num">{rows.length}</span>
+              <span className="counter-lbl">
+                incidencias
+                {filtered.length !== rows.length && ` · ${filtered.length} filtradas`}
+              </span>
+            </>
+          )}
+        </div>
         <button className="btn ghost" onClick={logout}>Salir</button>
       </header>
 

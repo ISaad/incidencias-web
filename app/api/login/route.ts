@@ -58,7 +58,10 @@ export async function POST(req: NextRequest) {
         ...baseA,
         filtros: { id_contrato: c.ID_CONTRATO },
       });
-      const inmuebles = findAll(info?.data, "COD_INMUEBLE");
+      // Solo viviendas (VI): garaje/trastero no tienen incidencias utiles.
+      const inmuebles = findAll(info?.data, "COD_INMUEBLE").filter(
+        (i) => (i.COD_TIPO_INMUEBLE || "").toUpperCase() === "VI"
+      );
       for (const inm of inmuebles) {
         try {
           const dat = await ws("Sic/getDatosInmueble", session, {
