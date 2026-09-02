@@ -218,7 +218,7 @@ export default function Page() {
           <label className="date">Desde <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
           <label className="date">Hasta <input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
           <button className="btn sec" onClick={() => { setQ(""); setState(""); setRoom(""); setFrom(""); setTo(""); }}>Limpiar</button>
-          {!loading && filtered.length !== rows.length && (
+          {!loading && (
             <span className="filt-note">{filtered.length} de {rows.length}</span>
           )}
           <div className="spacer" />
