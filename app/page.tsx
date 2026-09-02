@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 
@@ -17,10 +17,13 @@ const EMPTY_VALUES = {
 const COLS: [string, string][] = [
   ["referencia", "Ref."],
   ["state", "Estado"],
+  ["reabierta", "Reab."],
   ["room", "Estancia"],
+  ["profession", "Oficio"],
   ["urgencia", "Urgencia"],
   ["tipoSolicitud", "Tipo"],
   ["openDate", "Apertura"],
+  ["diasDesdeEnvio", "Días"],
   ["fechaFinPrevisto", "Fin previsto"],
   ["closeDate", "Cierre"],
   ["descProveedor", "Proveedor"],
@@ -40,6 +43,16 @@ function parseDate(d: string | null): number {
   if (m) return new Date(+m[3], +m[2] - 1, +m[1]).getTime();
   const t = Date.parse(d);
   return isNaN(t) ? 0 : t;
+}
+
+const DASH = <span className="muted">—</span>;
+function renderCell(r: Row, k: string): ReactNode {
+  const v = r[k];
+  if (k === "state") return <span className={badgeClass(v)}>{v}</span>;
+  if (k === "reabierta")
+    return String(v) === "1" ? <span className="badge pend">Sí</span> : DASH;
+  if (k === "description") return r.description || r.additionalInformation || DASH;
+  return v === null || v === undefined || v === "" ? DASH : v;
 }
 
 export default function Page() {
@@ -140,7 +153,11 @@ export default function Page() {
   function tableData() {
     return filtered.map((r) => {
       const o: Record<string, any> = {};
-      for (const [k, label] of COLS) o[label] = r[k] ?? "";
+      for (const [k, label] of COLS) {
+        if (k === "reabierta") o[label] = String(r[k]) === "1" ? "Sí" : "No";
+        else if (k === "description") o[label] = r.description || r.additionalInformation || "";
+        else o[label] = r[k] ?? "";
+      }
       return o;
     });
   }
@@ -234,16 +251,14 @@ export default function Page() {
             <tbody>
               {filtered.map((r) => (
                 <tr key={r.id}>
-                  <td className="ref">{r.referencia}</td>
-                  <td><span className={badgeClass(r.state)}>{r.state}</span></td>
-                  <td>{r.room}</td>
-                  <td>{r.urgencia}</td>
-                  <td>{r.tipoSolicitud}</td>
-                  <td>{r.openDate}</td>
-                  <td>{r.fechaFinPrevisto || <span className="muted">—</span>}</td>
-                  <td>{r.closeDate || <span className="muted">—</span>}</td>
-                  <td>{r.descProveedor || <span className="muted">—</span>}</td>
-                  <td className="desc">{r.description || r.additionalInformation || <span className="muted">—</span>}</td>
+                  {COLS.map(([k]) => (
+                    <td
+                      key={k}
+                      className={k === "referencia" ? "ref" : k === "description" ? "desc" : undefined}
+                    >
+                      {renderCell(r, k)}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
