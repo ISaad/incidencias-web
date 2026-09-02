@@ -49,6 +49,16 @@ function parseDate(d: string | null): number {
 const MOBILE = new Set(["referencia", "state", "room", "diasDesdeEnvio", "description"]);
 
 const DASH = <span className="muted">—</span>;
+
+function Field({ label, value }: { label: string; value: any }) {
+  if (value === null || value === undefined || value === "") return null;
+  return (
+    <div className="f">
+      <span className="fl">{label}</span>
+      <span className="fv">{value}</span>
+    </div>
+  );
+}
 function renderCell(r: Row, k: string): ReactNode {
   const v = r[k];
   if (k === "state") return <span className={badgeClass(v)}>{v}</span>;
@@ -75,6 +85,12 @@ export default function Page() {
   const [to, setTo] = useState("");
   const [sortKey, setSortKey] = useState("referencia");
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
+
+  // detalle + fotos
+  const [sel, setSel] = useState<Row | null>(null);
+  const [photos, setPhotos] = useState<{ id: string; src: string }[]>([]);
+  const [photosLoading, setPhotosLoading] = useState(false);
+  const [zoom, setZoom] = useState<string | null>(null);
 
   // Carga sesion de sessionStorage
   useEffect(() => {
@@ -184,6 +200,56 @@ export default function Page() {
     router.replace("/login");
   }
 
+  async function openIncidence(r: Row) {
+    setSel(r);
+    setPhotos([]);
+    setZoom(null);
+    if (!(+r.documentos > 0)) return; // sin documentos: no pedir nada
+    setPhotosLoading(true);
+    try {
+      const call = (path: string, values: any) =>
+        fetch(`/api/backend/${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session, values }),
+        }).then((x) => x.json());
+
+      // metadata en carpetas 1..3 (cliente / proveedor / cierre)
+      const metas = (
+        await Promise.all(
+          [1, 2, 3].map((c) =>
+            call("Document/getDocuments", {
+              tipoObjetoId: "2",
+              carpetaId: c,
+              objetoId: String(r.id),
+              obtenerParteAlta: false,
+            }).catch(() => [])
+          )
+        )
+      ).flat();
+
+      const seen = new Set<string>();
+      const imgs = metas.filter((m: any) => {
+        if (!m?.id || seen.has(m.id) || !String(m.mime || "").startsWith("image")) return false;
+        seen.add(m.id);
+        return true;
+      });
+
+      const loaded = await Promise.all(
+        imgs.map(async (m: any) => {
+          const d = await call("Document/getDocumentById", { id: String(m.id) });
+          const o = Array.isArray(d) ? d[0] : d;
+          return { id: m.id, src: `data:${o.mime || m.mime};base64,${o.document}` };
+        })
+      );
+      setPhotos(loaded);
+    } catch {
+      /* noop */
+    } finally {
+      setPhotosLoading(false);
+    }
+  }
+
   if (!session) return null;
 
   return (
@@ -246,7 +312,7 @@ export default function Page() {
             </thead>
             <tbody>
               {filtered.map((r) => (
-                <tr key={r.id}>
+                <tr key={r.id} className="row" onClick={() => openIncidence(r)}>
                   {COLS.map(([k]) => (
                     <td
                       key={k}
@@ -264,6 +330,57 @@ export default function Page() {
           </table>
         )}
       </div>
+
+      {sel && (
+        <div className="modal-ov" onClick={() => setSel(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <span><b>#{sel.referencia}</b> · {sel.room}</span>
+              <button className="x" onClick={() => setSel(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="fields">
+                <Field label="Estado" value={sel.state} />
+                <Field label="Urgencia" value={sel.urgencia} />
+                <Field label="Oficio" value={sel.profession} />
+                <Field label="Apertura" value={sel.openDate} />
+                <Field label="Días" value={sel.diasDesdeEnvio} />
+                <Field label="Fin previsto" value={sel.fechaFinPrevisto} />
+                <Field label="Cierre" value={sel.closeDate} />
+                <Field label="Proveedor" value={sel.descProveedor} />
+                <Field label="Tel. proveedor" value={sel.telefonoProveedor || sel.movilProveedor} />
+                <Field label="Email proveedor" value={sel.emailProveedor} />
+              </div>
+              <div className="block">
+                <span className="fl">Descripción</span>
+                <div className="desc-full">{sel.description || "—"}</div>
+              </div>
+              {sel.additionalInformation && (
+                <div className="block">
+                  <span className="fl">Observaciones</span>
+                  <div className="desc-full">{sel.additionalInformation}</div>
+                </div>
+              )}
+              <div className="photos">
+                <h4>Fotos{+sel.documentos > 0 ? ` (${sel.documentos})` : ""}</h4>
+                {!(+sel.documentos > 0) && <p className="muted">Sin fotos</p>}
+                {photosLoading && <p className="muted">Cargando fotos…</p>}
+                <div className="photo-grid">
+                  {photos.map((p) => (
+                    <img key={p.id} src={p.src} alt="" onClick={() => setZoom(p.src)} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {zoom && (
+        <div className="zoom-ov" onClick={() => setZoom(null)}>
+          <img src={zoom} alt="" />
+        </div>
+      )}
     </>
   );
 }
