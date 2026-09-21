@@ -81,6 +81,7 @@ export default function Page() {
   const [q, setQ] = useState("");
   const [state, setState] = useState("");
   const [room, setRoom] = useState("");
+  const [profession, setProfession] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [sortKey, setSortKey] = useState("referencia");
@@ -91,6 +92,12 @@ export default function Page() {
   const [photos, setPhotos] = useState<{ id: string; src: string }[]>([]);
   const [photosLoading, setPhotosLoading] = useState(false);
   const [zoom, setZoom] = useState<string | null>(null);
+
+  // edicion de descripcion (unica escritura de la app)
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editMsg, setEditMsg] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(null);
 
   // Carga sesion de sessionStorage
   useEffect(() => {
@@ -131,6 +138,7 @@ export default function Page() {
 
   const states = useMemo(() => [...new Set(rows.map((r) => r.state).filter(Boolean))].sort(), [rows]);
   const rooms = useMemo(() => [...new Set(rows.map((r) => r.room).filter(Boolean))].sort(), [rows]);
+  const professions = useMemo(() => [...new Set(rows.map((r) => r.profession).filter(Boolean))].sort(), [rows]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -139,6 +147,7 @@ export default function Page() {
     let out = rows.filter((r) => {
       if (state && r.state !== state) return false;
       if (room && r.room !== room) return false;
+      if (profession && r.profession !== profession) return false;
       if (fromT || toT) {
         const t = parseDate(r.openDate);
         if (fromT && t < fromT) return false;
@@ -163,7 +172,7 @@ export default function Page() {
       return av < bv ? -sortDir : av > bv ? sortDir : 0;
     });
     return out;
-  }, [rows, q, state, room, from, to, sortKey, sortDir]);
+  }, [rows, q, state, room, profession, from, to, sortKey, sortDir]);
 
   function toggleSort(k: string) {
     if (sortKey === k) setSortDir((d) => (d === 1 ? -1 : 1));
@@ -202,6 +211,8 @@ export default function Page() {
 
   async function openIncidence(r: Row) {
     setSel(r);
+    setEditing(false);
+    setEditMsg(null);
     setPhotos([]);
     setZoom(null);
     if (!(+r.documentos > 0)) return; // sin documentos: no pedir nada
@@ -250,6 +261,50 @@ export default function Page() {
     }
   }
 
+  async function saveDescription() {
+    if (!sel) return;
+    const text = draft.trim();
+    if (!text || text === (sel.description || "").trim()) { setEditing(false); return; }
+    setSaving(true);
+    setEditMsg(null);
+    try {
+      const r = await fetch("/api/incidence/description", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session, id: sel.id, description: text }),
+      });
+      const j = await r.json();
+      if (!r.ok || j.error) {
+        const extra = [
+          j.descripcionCambiada ? "La descripción SÍ llegó a cambiar." : "",
+          j.changed?.length
+            ? "Otros campos cambiados: " + j.changed.map((c: any) => `${c.campo} (${JSON.stringify(c.antes)} → ${JSON.stringify(c.despues)})`).join(", ")
+            : "",
+        ].filter(Boolean).join(" ");
+        throw new Error([j.error || `Error ${r.status}`, extra].filter(Boolean).join(" — "));
+      }
+      const upd = { ...sel, description: j.descripcion ?? text };
+      setSel(upd);
+      setRows((rs) => rs.map((x) => (x.id === sel.id ? { ...x, description: upd.description } : x)));
+      setEditing(false);
+      if (j.changed?.length) {
+        setEditMsg({
+          kind: "warn",
+          text: "Guardado, pero también cambiaron: " +
+            j.changed.map((c: any) => `${c.campo} (${JSON.stringify(c.antes)} → ${JSON.stringify(c.despues)})`).join(", "),
+        });
+      } else if (!j.ok) {
+        setEditMsg({ kind: "warn", text: "Enviado, pero Prinex no devuelve la descripción nueva. Revisa en la app oficial." });
+      } else {
+        setEditMsg({ kind: "ok", text: "Descripción guardada" });
+      }
+    } catch (e: any) {
+      setEditMsg({ kind: "err", text: e.message || String(e) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!session) return null;
 
   return (
@@ -284,9 +339,13 @@ export default function Page() {
             <option value="">Estancia (todas)</option>
             {rooms.map((s) => (<option key={s} value={s}>{s}</option>))}
           </select>
+          <select value={profession} onChange={(e) => setProfession(e.target.value)}>
+            <option value="">Oficio (todos)</option>
+            {professions.map((s) => (<option key={s} value={s}>{s}</option>))}
+          </select>
           <label className="date">Desde <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
           <label className="date">Hasta <input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
-          <button className="btn sec" onClick={() => { setQ(""); setState(""); setRoom(""); setFrom(""); setTo(""); }}>Limpiar</button>
+          <button className="btn sec" onClick={() => { setQ(""); setState(""); setRoom(""); setProfession(""); setFrom(""); setTo(""); }}>Limpiar</button>
           {!loading && (
             <span className="filt-note">{filtered.length} de {rows.length}</span>
           )}
@@ -332,15 +391,16 @@ export default function Page() {
       </div>
 
       {sel && (
-        <div className="modal-ov" onClick={() => setSel(null)}>
+        <div className="modal-ov" onClick={() => !saving && setSel(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <span><b>#{sel.referencia}</b> · {sel.room}</span>
-              <button className="x" onClick={() => setSel(null)}>✕</button>
+              <button className="x" onClick={() => !saving && setSel(null)}>✕</button>
             </div>
             <div className="modal-body">
               <div className="fields">
                 <Field label="Estado" value={sel.state} />
+                <Field label="Estancia" value={sel.room} />
                 <Field label="Urgencia" value={sel.urgencia} />
                 <Field label="Oficio" value={sel.profession} />
                 <Field label="Apertura" value={sel.openDate} />
@@ -352,8 +412,35 @@ export default function Page() {
                 <Field label="Email proveedor" value={sel.emailProveedor} />
               </div>
               <div className="block">
-                <span className="fl">Descripción</span>
-                <div className="desc-full">{sel.description || "—"}</div>
+                <div className="block-head">
+                  <span className="fl">Descripción</span>
+                  {!editing && (
+                    <button className="btn sec sm" onClick={() => { setDraft(sel.description || ""); setEditMsg(null); setEditing(true); }}>
+                      Editar
+                    </button>
+                  )}
+                </div>
+                {editing ? (
+                  <>
+                    <textarea
+                      className="desc-edit"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      rows={5}
+                      disabled={saving}
+                      autoFocus
+                    />
+                    <div className="edit-actions">
+                      <button className="btn sec sm" onClick={() => setEditing(false)} disabled={saving}>Cancelar</button>
+                      <button className="btn sm" onClick={saveDescription} disabled={saving || !draft.trim()}>
+                        {saving ? "Guardando…" : "Guardar"}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="desc-full">{sel.description || "—"}</div>
+                )}
+                {editMsg && <div className={`edit-msg ${editMsg.kind}`}>{editMsg.text}</div>}
               </div>
               {sel.additionalInformation && (
                 <div className="block">

@@ -1,4 +1,5 @@
-// Helpers servidor para la API de posventa (cliente). SOLO LECTURA.
+// Helpers servidor para la API de posventa (cliente). Solo lectura, salvo la
+// edicion de descripcion en app/api/incidence/description/route.ts.
 import crypto from "crypto";
 
 const H = "https://apps.prinex.com";

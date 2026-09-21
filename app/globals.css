@@ -113,6 +113,15 @@ tbody tr.row { cursor: pointer; }
 .fv { font-size: 14px; }
 .block { margin-bottom: 14px; }
 .desc-full { background: var(--bg); border-radius: 8px; padding: 12px; margin-top: 4px; white-space: pre-wrap; }
+.block-head { display: flex; align-items: center; justify-content: space-between; }
+.btn.sm { padding: 4px 10px; font-size: 13px; }
+.btn:disabled { opacity: .55; cursor: default; }
+.desc-edit { width: 100%; margin-top: 4px; padding: 10px; border: 1px solid var(--azul); border-radius: 8px; font: inherit; font-size: 14px; resize: vertical; box-sizing: border-box; }
+.edit-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.edit-msg { margin-top: 8px; padding: 8px 12px; border-radius: 8px; font-size: 13px; }
+.edit-msg.ok { background: #e7f6ec; color: #1e6b3a; }
+.edit-msg.warn { background: #fff4de; color: #8a5a00; }
+.edit-msg.err { background: #fde8e8; color: #9b1c1c; }
 .photos h4 { margin: 0 0 8px; color: var(--azul-osc); }
 .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
 .photo-grid img { width: 100%; height: 110px; object-fit: cover; border-radius: 8px; cursor: zoom-in; border: 1px solid var(--border); }
