@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cupe, ws, md5, COD_APP, Session } from "@/lib/api";
+import { cupe, ws, md5, COD_APP, APP_VERSION, Session } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
       password_esta_encriptada: true,
       cod_app: COD_APP,
       cod_naturaleza_acceso: "A",
+      version: APP_VERSION,
     });
     const actor = login?.data?.data?.[0];
     if (!actor?.token_sesion) {
