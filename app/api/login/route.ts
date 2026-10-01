@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cupe, ws, md5, COD_APP, APP_VERSION, Session } from "@/lib/api";
+import { cupe, ws, COD_APP, APP_VERSION, Session } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
     // 1) login_app
     const login = await cupe("CUPE_BKND_WS_Admin/login_app", {
       usermail: email,
-      password: md5(password),
-      password_esta_encriptada: true,
+      password: password,
+      password_esta_encriptada: false,
       cod_app: COD_APP,
       cod_naturaleza_acceso: "A",
       version: APP_VERSION,

@@ -1,16 +1,10 @@
 // Helpers servidor para la API de posventa (cliente). Solo lectura, salvo la
 // edicion de descripcion en app/api/incidence/description/route.ts.
-import crypto from "crypto";
-
 const H = "https://apps.prinex.com";
 export const CUPE = `${H}/cupe_backend/api`;
 export const WS = `${H}/posventaws_2.0/index.php`;
 export const COD_APP = "1053"; // codigo de aplicacion (constante)
 export const APP_VERSION = "3.0.0"; // version que espera el backend en login_app (sin esto: "Debe actualizar la version")
-
-export function md5(s: string) {
-  return crypto.createHash("md5").update(s).digest("hex");
-}
 
 export type Session = {
   email: string;
