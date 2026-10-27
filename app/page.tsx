@@ -68,6 +68,20 @@ function renderCell(r: Row, k: string): ReactNode {
   return v === null || v === undefined || v === "" ? DASH : v;
 }
 
+// Reduce la foto (lado mayor 1920px, JPEG) para no mandar 10MB de movil al backend.
+async function compressImage(f: File, max = 1920): Promise<{ base64: string; mime: string; name: string }> {
+  const bmp = await createImageBitmap(f);
+  const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width * k);
+  c.height = Math.round(bmp.height * k);
+  c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close();
+  const dataUrl = c.toDataURL("image/jpeg", 0.85);
+  const name = f.name.replace(/\.[^.]+$/, "") + ".jpg";
+  return { base64: dataUrl.slice(dataUrl.indexOf(",") + 1), mime: "image/jpeg", name };
+}
+
 export default function Page() {
   const router = useRouter();
   const [session, setSession] = useState<any>(null);
@@ -98,6 +112,10 @@ export default function Page() {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [editMsg, setEditMsg] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(null);
+
+  // subida de fotos (segunda escritura permitida); una peticion por foto, en serie
+  const [uploading, setUploading] = useState<{ done: number; total: number } | null>(null);
+  const [uploadMsg, setUploadMsg] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(null);
 
   // Carga sesion de sessionStorage
   useEffect(() => {
@@ -213,9 +231,14 @@ export default function Page() {
     setSel(r);
     setEditing(false);
     setEditMsg(null);
+    setUploadMsg(null);
     setPhotos([]);
     setZoom(null);
     if (!(+r.documentos > 0)) return; // sin documentos: no pedir nada
+    await loadPhotos(r);
+  }
+
+  async function loadPhotos(r: Row) {
     setPhotosLoading(true);
     try {
       const call = (path: string, values: any) =>
@@ -259,6 +282,43 @@ export default function Page() {
     } finally {
       setPhotosLoading(false);
     }
+  }
+
+  async function uploadPhotos(files: File[]) {
+    if (!sel || !files.length) return;
+    const target = sel;
+    setUploadMsg(null);
+    setUploading({ done: 0, total: files.length });
+    const failed: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      try {
+        const { base64, mime, name } = await compressImage(f);
+        const r = await fetch("/api/incidence/photo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session, id: target.id, name, mime, base64 }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error) throw new Error(j.error || `Error ${r.status}`);
+      } catch (e: any) {
+        failed.push(`${f.name}: ${e.message || e}`);
+      }
+      setUploading({ done: i + 1, total: files.length });
+    }
+    setUploading(null);
+    const ok = files.length - failed.length;
+    if (ok) {
+      const upd = { ...target, documentos: (+target.documentos || 0) + ok };
+      setSel(upd);
+      setRows((rs) => rs.map((x) => (x.id === target.id ? { ...x, documentos: upd.documentos } : x)));
+      await loadPhotos(upd);
+    }
+    setUploadMsg(
+      failed.length
+        ? { kind: ok ? "warn" : "err", text: `${ok} de ${files.length} subidas. Fallos: ${failed.join("; ")}` }
+        : { kind: "ok", text: ok === 1 ? "Foto subida" : `${ok} fotos subidas` }
+    );
   }
 
   async function saveDescription() {
@@ -391,11 +451,11 @@ export default function Page() {
       </div>
 
       {sel && (
-        <div className="modal-ov" onClick={() => !saving && setSel(null)}>
+        <div className="modal-ov" onClick={() => !saving && !uploading && setSel(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <span><b>#{sel.referencia}</b> · {sel.room}</span>
-              <button className="x" onClick={() => !saving && setSel(null)}>✕</button>
+              <button className="x" onClick={() => !saving && !uploading && setSel(null)}>✕</button>
             </div>
             <div className="modal-body">
               <div className="fields">
@@ -449,7 +509,25 @@ export default function Page() {
                 </div>
               )}
               <div className="photos">
-                <h4>Fotos{+sel.documentos > 0 ? ` (${sel.documentos})` : ""}</h4>
+                <div className="block-head">
+                  <h4>Fotos{+sel.documentos > 0 ? ` (${sel.documentos})` : ""}</h4>
+                  <label className={`btn sec sm${uploading ? " disabled" : ""}`}>
+                    {uploading ? `Subiendo ${uploading.done}/${uploading.total}…` : "+ Añadir fotos"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      hidden
+                      disabled={!!uploading}
+                      onChange={(e) => {
+                        const fs = Array.from(e.target.files || []);
+                        e.target.value = "";
+                        uploadPhotos(fs);
+                      }}
+                    />
+                  </label>
+                </div>
+                {uploadMsg && <div className={`edit-msg ${uploadMsg.kind}`}>{uploadMsg.text}</div>}
                 {!(+sel.documentos > 0) && <p className="muted">Sin fotos</p>}
                 {photosLoading && <p className="muted">Cargando fotos…</p>}
                 <div className="photo-grid">

@@ -1,5 +1,6 @@
 // Helpers servidor para la API de posventa (cliente). Solo lectura, salvo la
-// edicion de descripcion en app/api/incidence/description/route.ts.
+// edicion de descripcion (app/api/incidence/description) y la subida de fotos
+// (app/api/incidence/photo).
 const H = "https://apps.prinex.com";
 export const CUPE = `${H}/cupe_backend/api`;
 export const WS = `${H}/posventaws_2.0/index.php`;
