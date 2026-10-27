@@ -3,9 +3,9 @@ import { ws, Session } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
-// UNICA escritura permitida en la app: cambiar la descripcion de una incidencia.
+// Escritura permitida: cambiar la descripcion u observaciones de una incidencia.
 // `Incidence/updateIncidence` sobrescribe la incidencia completa, asi que se lee
-// el registro actual y se reenvia tal cual cambiando solo `description`.
+// el registro actual y se reenvia tal cual cambiando solo ese campo.
 // Mapeo copiado del gestor web de Prinex (saveIncidencia en posventa/js/app.*.js).
 function buildPayload(inc: any, complaint: string[], description: string) {
   const bool01 = (v: any) => (v === true || v === 1 || v === "1" ? 1 : 0);
@@ -66,9 +66,16 @@ async function getComplaintIds(session: Session, id: string): Promise<string[] |
   return Object.values(d).map((x: any) => x?.tipoReclamacionId).filter((x) => x != null);
 }
 
-// Campos que no deberian cambiar al editar la descripcion.
-const IGNORE = new Set(["descripcion", "description", "fechaModificacion", "fechaUltimaModificacion"]);
-function diff(a: any, b: any) {
+// Campo editable -> clave en el payload de updateIncidence y en getIncidenceById
+const FIELDS = {
+  description: { payload: "description", record: "descripcion", label: "descripción" },
+  obs: { payload: "obs", record: "observaciones", label: "observaciones" },
+} as const;
+type Field = keyof typeof FIELDS;
+
+// Campos que pueden cambiar al guardar (el editado + fechas de modificacion).
+function diff(a: any, b: any, field: Field) {
+  const IGNORE = new Set([FIELDS[field].record, FIELDS[field].payload, "fechaModificacion", "fechaUltimaModificacion"]);
   const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
   return [...keys].filter(
     (k) => !IGNORE.has(k) && JSON.stringify(a?.[k]) !== JSON.stringify(b?.[k])
@@ -76,22 +83,33 @@ function diff(a: any, b: any) {
 }
 
 export async function POST(req: NextRequest) {
-  const { session, id, description, dryRun } = (await req.json().catch(() => ({}))) as {
+  const body = (await req.json().catch(() => ({}))) as {
     session?: Session;
     id?: string | number;
-    description?: string;
+    field?: Field;
+    value?: string;
+    description?: string; // compat: equivale a field=description
     dryRun?: boolean;
   };
+  const { session, id, dryRun } = body;
+  const field: Field = body.field ?? "description";
+  const value = body.value ?? body.description;
   if (!session?.token_sesion) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   }
-  if (!id || typeof description !== "string" || !description.trim()) {
-    return NextResponse.json({ error: "Faltan id o descripción" }, { status: 400 });
+  if (!(field in FIELDS)) {
+    return NextResponse.json({ error: "Campo no editable" }, { status: 400 });
   }
+  const f = FIELDS[field];
+  // La descripcion es obligatoria; las observaciones pueden quedar vacias.
+  if (!id || typeof value !== "string" || (field === "description" && !value.trim())) {
+    return NextResponse.json({ error: `Faltan id o ${f.label}` }, { status: 400 });
+  }
+  const text = value.trim();
 
   // 1) Registro actual completo
   const before = await getById(session, String(id));
-  if (!before || String(before.id) !== String(id) || !("descripcion" in before)) {
+  if (!before || String(before.id) !== String(id) || !("descripcion" in before) || !(f.record in before)) {
     return NextResponse.json(
       { error: "No se pudo leer la incidencia completa; no se envía nada", raw: before },
       { status: 502 }
@@ -106,7 +124,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const values = buildPayload(before, complaint, description.trim());
+  const values: any = buildPayload(before, complaint, before.descripcion);
+  values[f.payload] = text;
   if (dryRun) return NextResponse.json({ dryRun: true, before, values });
 
   // 2) Escritura
@@ -117,7 +136,7 @@ export async function POST(req: NextRequest) {
   // por si el backend aplico algo a medias)
   const after = await getById(session, String(id));
   const complaintAfter = await getComplaintIds(session, String(id));
-  const changed = diff(before, after);
+  const changed = diff(before, after, field);
   if (complaintAfter && JSON.stringify([...complaint].sort()) !== JSON.stringify([...complaintAfter].sort())) {
     changed.push("reclamaciones");
   }
@@ -130,7 +149,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error: res?.description || res?.descriptionNOK || res?.data?.mensajeSesion || "Prinex rechazó el cambio",
-        descripcionCambiada: after?.descripcion !== before.descripcion,
+        descripcionCambiada: after?.[f.record] !== before[f.record],
         changed: report,
         res,
       },
@@ -138,10 +157,11 @@ export async function POST(req: NextRequest) {
     );
   }
   if (changed.length) {
-    console.warn("[description] campos cambiados inesperadamente", id, changed.map((k) => ({ k, antes: before[k], despues: after?.[k] })));
+    console.warn("[description] campos cambiados inesperadamente", id, field, changed.map((k) => ({ k, antes: before[k], despues: after?.[k] })));
   }
   return NextResponse.json({
-    ok: after?.descripcion === description.trim(),
+    ok: (after?.[f.record] ?? "") === text,
+    valor: after?.[f.record],
     descripcion: after?.descripcion,
     changed: report,
     res,

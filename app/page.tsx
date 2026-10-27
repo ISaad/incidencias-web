@@ -50,6 +50,9 @@ const MOBILE = new Set(["referencia", "state", "room", "diasDesdeEnvio", "descri
 
 const DASH = <span className="muted">—</span>;
 
+type EditField = "description" | "obs";
+const EDIT_LABEL: Record<EditField, string> = { description: "Descripción", obs: "Observaciones" };
+
 function Field({ label, value }: { label: string; value: any }) {
   if (value === null || value === undefined || value === "") return null;
   return (
@@ -107,11 +110,11 @@ export default function Page() {
   const [photosLoading, setPhotosLoading] = useState(false);
   const [zoom, setZoom] = useState<string | null>(null);
 
-  // edicion de descripcion (unica escritura de la app)
-  const [editing, setEditing] = useState(false);
+  // edicion de descripcion u observaciones (via /api/incidence/description)
+  const [editing, setEditing] = useState<EditField | null>(null);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
-  const [editMsg, setEditMsg] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(null);
+  const [editMsg, setEditMsg] = useState<{ field: EditField; kind: "ok" | "warn" | "err"; text: string } | null>(null);
 
   // subida de fotos (segunda escritura permitida); una peticion por foto, en serie
   const [uploading, setUploading] = useState<{ done: number; total: number } | null>(null);
@@ -229,7 +232,7 @@ export default function Page() {
 
   async function openIncidence(r: Row) {
     setSel(r);
-    setEditing(false);
+    setEditing(null);
     setEditMsg(null);
     setUploadMsg(null);
     setPhotos([]);
@@ -309,8 +312,9 @@ export default function Page() {
     setUploading(null);
     const ok = files.length - failed.length;
     if (ok) {
-      const upd = { ...target, documentos: (+target.documentos || 0) + ok };
-      setSel(upd);
+      const documentos = await fetchDocumentCount(target);
+      const upd = { ...target, documentos: documentos ?? (+target.documentos || 0) + ok };
+      setSel((cur) => (cur?.id === target.id ? upd : cur));
       setRows((rs) => rs.map((x) => (x.id === target.id ? { ...x, documentos: upd.documentos } : x)));
       await loadPhotos(upd);
     }
@@ -321,45 +325,73 @@ export default function Page() {
     );
   }
 
-  async function saveDescription() {
+  // Numero de documentos segun Prinex (relee la incidencia en el listado)
+  async function fetchDocumentCount(r: Row): Promise<number | null> {
+    try {
+      const res = await fetch("/api/backend/Incidence/getIncidences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session,
+          values: { ...EMPTY_VALUES, selectedProperty: properties[propIdx].selectedProperty },
+        }),
+      }).then((x) => x.json());
+      const row = Array.isArray(res?.data) ? res.data.find((x: Row) => x.id === r.id) : null;
+      return row && row.documentos != null ? +row.documentos : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function startEdit(field: EditField) {
     if (!sel) return;
+    setDraft((field === "description" ? sel.description : sel.additionalInformation) || "");
+    setEditMsg(null);
+    setEditing(field);
+  }
+
+  async function saveEdit() {
+    if (!sel || !editing) return;
+    const field = editing;
+    const key = field === "description" ? "description" : "additionalInformation";
     const text = draft.trim();
-    if (!text || text === (sel.description || "").trim()) { setEditing(false); return; }
+    if ((field === "description" && !text) || text === (sel[key] || "").trim()) { setEditing(null); return; }
     setSaving(true);
     setEditMsg(null);
     try {
       const r = await fetch("/api/incidence/description", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session, id: sel.id, description: text }),
+        body: JSON.stringify({ session, id: sel.id, field, value: text }),
       });
       const j = await r.json();
       if (!r.ok || j.error) {
         const extra = [
-          j.descripcionCambiada ? "La descripción SÍ llegó a cambiar." : "",
+          j.descripcionCambiada ? `${EDIT_LABEL[field]} SÍ llegó a cambiar.` : "",
           j.changed?.length
             ? "Otros campos cambiados: " + j.changed.map((c: any) => `${c.campo} (${JSON.stringify(c.antes)} → ${JSON.stringify(c.despues)})`).join(", ")
             : "",
         ].filter(Boolean).join(" ");
         throw new Error([j.error || `Error ${r.status}`, extra].filter(Boolean).join(" — "));
       }
-      const upd = { ...sel, description: j.descripcion ?? text };
+      const upd = { ...sel, [key]: j.valor ?? text };
       setSel(upd);
-      setRows((rs) => rs.map((x) => (x.id === sel.id ? { ...x, description: upd.description } : x)));
-      setEditing(false);
+      setRows((rs) => rs.map((x) => (x.id === sel.id ? { ...x, [key]: upd[key] } : x)));
+      setEditing(null);
       if (j.changed?.length) {
         setEditMsg({
+          field,
           kind: "warn",
           text: "Guardado, pero también cambiaron: " +
             j.changed.map((c: any) => `${c.campo} (${JSON.stringify(c.antes)} → ${JSON.stringify(c.despues)})`).join(", "),
         });
       } else if (!j.ok) {
-        setEditMsg({ kind: "warn", text: "Enviado, pero Prinex no devuelve la descripción nueva. Revisa en la app oficial." });
+        setEditMsg({ field, kind: "warn", text: `Enviado, pero Prinex no devuelve el texto nuevo (${EDIT_LABEL[field].toLowerCase()}). Revisa en la app oficial.` });
       } else {
-        setEditMsg({ kind: "ok", text: "Descripción guardada" });
+        setEditMsg({ field, kind: "ok", text: `${EDIT_LABEL[field]} guardada${field === "obs" ? "s" : ""}` });
       }
     } catch (e: any) {
-      setEditMsg({ kind: "err", text: e.message || String(e) });
+      setEditMsg({ field, kind: "err", text: e.message || String(e) });
     } finally {
       setSaving(false);
     }
@@ -471,46 +503,45 @@ export default function Page() {
                 <Field label="Tel. proveedor" value={sel.telefonoProveedor || sel.movilProveedor} />
                 <Field label="Email proveedor" value={sel.emailProveedor} />
               </div>
-              <div className="block">
-                <div className="block-head">
-                  <span className="fl">Descripción</span>
-                  {!editing && (
-                    <button className="btn sec sm" onClick={() => { setDraft(sel.description || ""); setEditMsg(null); setEditing(true); }}>
-                      Editar
-                    </button>
-                  )}
-                </div>
-                {editing ? (
-                  <>
-                    <textarea
-                      className="desc-edit"
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      rows={5}
-                      disabled={saving}
-                      autoFocus
-                    />
-                    <div className="edit-actions">
-                      <button className="btn sec sm" onClick={() => setEditing(false)} disabled={saving}>Cancelar</button>
-                      <button className="btn sm" onClick={saveDescription} disabled={saving || !draft.trim()}>
-                        {saving ? "Guardando…" : "Guardar"}
-                      </button>
+              {(["description", "obs"] as EditField[]).map((field) => {
+                const value = field === "description" ? sel.description : sel.additionalInformation;
+                return (
+                  <div className="block" key={field}>
+                    <div className="block-head">
+                      <span className="fl">{EDIT_LABEL[field]}</span>
+                      {editing !== field && (
+                        <button className="btn sec sm" onClick={() => startEdit(field)} disabled={!!editing}>
+                          Editar
+                        </button>
+                      )}
                     </div>
-                  </>
-                ) : (
-                  <div className="desc-full">{sel.description || "—"}</div>
-                )}
-                {editMsg && <div className={`edit-msg ${editMsg.kind}`}>{editMsg.text}</div>}
-              </div>
-              {sel.additionalInformation && (
-                <div className="block">
-                  <span className="fl">Observaciones</span>
-                  <div className="desc-full">{sel.additionalInformation}</div>
-                </div>
-              )}
+                    {editing === field ? (
+                      <>
+                        <textarea
+                          className="desc-edit"
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          rows={5}
+                          disabled={saving}
+                          autoFocus
+                        />
+                        <div className="edit-actions">
+                          <button className="btn sec sm" onClick={() => setEditing(null)} disabled={saving}>Cancelar</button>
+                          <button className="btn sm" onClick={saveEdit} disabled={saving || (field === "description" && !draft.trim())}>
+                            {saving ? "Guardando…" : "Guardar"}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="desc-full">{value || "—"}</div>
+                    )}
+                    {editMsg?.field === field && <div className={`edit-msg ${editMsg.kind}`}>{editMsg.text}</div>}
+                  </div>
+                );
+              })}
               <div className="photos">
                 <div className="block-head">
-                  <h4>Fotos{+sel.documentos > 0 ? ` (${sel.documentos})` : ""}</h4>
+                  <h4>Fotos{photos.length ? ` (${photos.length})` : +sel.documentos > 0 ? ` (${sel.documentos})` : ""}</h4>
                   <label className={`btn sec sm${uploading ? " disabled" : ""}`}>
                     {uploading ? `Subiendo ${uploading.done}/${uploading.total}…` : "+ Añadir fotos"}
                     <input
@@ -528,7 +559,7 @@ export default function Page() {
                   </label>
                 </div>
                 {uploadMsg && <div className={`edit-msg ${uploadMsg.kind}`}>{uploadMsg.text}</div>}
-                {!(+sel.documentos > 0) && <p className="muted">Sin fotos</p>}
+                {!(+sel.documentos > 0) && !photos.length && <p className="muted">Sin fotos</p>}
                 {photosLoading && <p className="muted">Cargando fotos…</p>}
                 <div className="photo-grid">
                   {photos.map((p) => (
